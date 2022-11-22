@@ -11,8 +11,10 @@ const testingRouter = require('./controllers/testing.js')
 const loginRouter = require('./controllers/login.js')
 const booksRouter = require('./controllers/books.js')
 const usersRouter = require('./controllers/users.js')
+const { setUpCloudinary } = require('./services/cloudinary.js')
 
 const app = express()
+setUpCloudinary()
 
 // CONFIG
 app.use(cors())

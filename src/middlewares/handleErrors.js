@@ -14,10 +14,10 @@ const errors = [
   }
 ]
 module.exports = (err, req, res, next) => {
-  console.error(err.name)
+  console.error(err)
   const { name: errName } = err
   const errFound = errors.find(({ name }) => name === errName)
 
-  if (!errFound) res.status(500).end()
+  if (!errFound) return res.status(500).end()
   errFound.action(res)
 }

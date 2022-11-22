@@ -1,15 +1,17 @@
 const Book = require('../models/Book')
-const User = require('../models/Book')
+const User = require('../models/User')
 
 const booksRouter = require('express').Router()
 const userExtractor = require('../middlewares/userExtractor')
+const { deleteFile } = require('../services/cloudinary')
+const upload = require('../middlewares/upload')
 
 booksRouter.get('/', async (req, res) => {
   const books = await Book.find({}).populate('user', { username: 1 })
   res.json(books)
 })
 
-booksRouter('/:id', async (req, res) => {
+booksRouter.get('/:id', async (req, res) => {
   const { id } = req.params
 
   const book = await Book.findById(id).populate('user', { username: 1 })
@@ -22,57 +24,77 @@ booksRouter('/:id', async (req, res) => {
 booksRouter.delete('/:id', userExtractor, async (req, res) => {
   const { id } = req.params
 
-  await Book.findByIdAndRemove(id)
+  const deletedBook = await Book.findByIdAndRemove(id)
+  if (deletedBook.image) deleteFile(deletedBook.image)
   res.status(204).end()
 })
 
-booksRouter.put('/:id', userExtractor, async (req, res) => {
-  const { id } = req.params
-  const book = req.body
+booksRouter.put(
+  '/:id',
+  [upload.single('image'), userExtractor],
+  async (req, res) => {
+    const { id } = req.params
+    const { title, author, review, image } = req.body
 
-  if (!book.title || !book.author || !book.review)
-    res.status(400).json({
-      error: 'Title, author or description is requeried to modify book'
+    if (!title || !author || !review || !image)
+      res.status(400).json({
+        error: 'Title, author , review or image is requeried to modify book'
+      })
+
+    const newBookInfo = {
+      title,
+      author,
+      review,
+      image
+    }
+
+    const updatedBook = await Book.findByIdAndUpdate(id, newBookInfo, {
+      new: true
     })
 
-  const newBookInfo = {
-    title: book.title,
-    author: book.author,
-    review: book.review
+    if (req.file) {
+      deleteFile(image)
+      newBookInfo.image = req.file.path
+    }
+    if (!updatedBook)
+      res.status(404).json({ error: 'This book does not exist' })
+
+    res.json(updatedBook)
   }
+)
 
-  const updatedBook = await Book.findByIdAndUpdate(id, newBookInfo, {
-    new: true
-  })
+booksRouter.post(
+  '/',
+  [upload.single('image'), userExtractor],
+  async (req, res) => {
+    const { title, author, review, image } = req.body
 
-  if (!updatedBook) res.status(404).json({ error: 'This book does not exist' })
+    const { userId } = req
+    console.log(userId)
+    const users = await User.find({})
+    console.log(users)
 
-  res.json(updatedBook)
-})
+    const user = await User.findById(userId)
 
-booksRouter.post('/', userExtractor, async (req, res) => {
-  const { title, author, review } = req.body
+    if (!title) res.status(400).json({ error: 'Title field is missing' })
+    if (!author) res.status(400).json({ error: 'Author field is missing' })
+    if (!review) res.status(400).json({ error: 'Review field is missing' })
 
-  const { userId } = req
+    const newBook = new Book({
+      author,
+      review,
+      title,
+      image,
+      user: user._id
+    })
+    if (req.file) newBook.image = req.file.path
 
-  const user = await User.findById(userId)
+    const saveBook = await newBook.save()
+    user.books = user.books.concat(saveBook._id)
+    await user.save()
 
-  if (!title) res.status(400).json({ error: 'Title field is missing' })
-  if (!author) res.status(400).json({ error: 'Author field is missing' })
-  if (!review) res.status(400).json({ error: 'Review field is missing' })
-
-  const newBook = new Book({
-    author,
-    review,
-    title,
-    user: user._id
-  })
-
-  const saveBook = await newBook.save()
-  user.books = user.books.concat(saveBook._id)
-  await user.save()
-
-  res.json(saveBook)
-})
+    res.json(saveBook)
+  }
+)
 
 module.exports = booksRouter
